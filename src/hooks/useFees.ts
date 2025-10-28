@@ -1,16 +1,16 @@
 import { useState, useCallback } from 'react';
 import { useNetwork } from '@/app/providers';
-import { createBlob, generateMerkleTree, createSubmission, getRootHash } from '@/lib/0g/blob';
+import { createZgFile, generateMerkleTree, createSubmission, getRootHash } from '@/lib/0g/blob';
 import { getProvider, getSigner, getFlowContract, calculateFees, FeeInfo } from '@/lib/0g/fees';
 import { getNetworkConfig } from '@/lib/0g/network';
-import { Blob, MerkleTree } from '@0glabs/0g-ts-sdk';
+import { ZgFile, MerkleTree } from '@0glabs/0g-ts-sdk';
 import { Contract } from 'ethers';
 
 export type { FeeInfo };
 
 /**
  * Custom hook for calculating fees for file uploads
- * Handles blob creation, merkle tree generation, and fee calculation
+ * Handles ZgFile creation, merkle tree generation, and fee calculation
  */
 export function useFees() {
   const { networkType } = useNetwork();
@@ -24,7 +24,7 @@ export function useFees() {
     isLoading: false
   });
   const [error, setError] = useState('');
-  const [blob, setBlob] = useState<Blob | null>(null);
+  const [zgFile, setZgFile] = useState<ZgFile | null>(null);
   const [tree, setTree] = useState<MerkleTree | null>(null);
   const [rootHash, setRootHash] = useState('');
   const [submission, setSubmission] = useState<any | null>(null);
@@ -46,15 +46,21 @@ export function useFees() {
     }
     
     try {
-      // 1. Create a blob from the file
-      const newBlob = createBlob(file);
-      setBlob(newBlob);
+      // 1. Create a ZgFile from the file
+      const [newZgFile, zgFileErr] = await createZgFile(file);
+      if (!newZgFile) {
+        setError(`Failed to create ZgFile: ${zgFileErr?.message}`);
+        setFeeInfo(prev => ({ ...prev, isLoading: false }));
+        return;
+      }
+      setZgFile(newZgFile);
       
       // 2. Generate a merkle tree
-      const [newTree, treeErr] = await generateMerkleTree(newBlob);
+      const [newTree, treeErr] = await generateMerkleTree(newZgFile);
       if (!newTree) {
         setError(`Failed to generate merkle tree: ${treeErr?.message}`);
         setFeeInfo(prev => ({ ...prev, isLoading: false }));
+        await newZgFile.close();
         return;
       }
       setTree(newTree);
@@ -64,15 +70,17 @@ export function useFees() {
       if (!hash) {
         setError(`Failed to get root hash: ${hashErr?.message}`);
         setFeeInfo(prev => ({ ...prev, isLoading: false }));
+        await newZgFile.close();
         return;
       }
       setRootHash(hash);
       
       // 4. Create a submission
-      const [newSubmission, submissionErr] = await createSubmission(newBlob);
+      const [newSubmission, submissionErr] = await createSubmission(newZgFile);
       if (!newSubmission) {
         setError(`Failed to create submission: ${submissionErr?.message}`);
         setFeeInfo(prev => ({ ...prev, isLoading: false }));
+        await newZgFile.close();
         return;
       }
       setSubmission(newSubmission);
@@ -126,7 +134,7 @@ export function useFees() {
   return {
     feeInfo,
     error,
-    blob,
+    zgFile,
     tree,
     rootHash,
     submission,

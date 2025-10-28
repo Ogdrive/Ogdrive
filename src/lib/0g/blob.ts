@@ -1,22 +1,29 @@
-import { Blob, MerkleTree } from '@0glabs/0g-ts-sdk';
+import { ZgFile, MerkleTree } from '@0glabs/0g-ts-sdk';
 
 /**
- * Creates a blob object from a file
- * @param file The file to create a blob from
- * @returns The blob object
+ * Creates a ZgFile object from a file
+ * @param file The file to create a ZgFile from
+ * @returns The ZgFile object and any error
  */
-export function createBlob(file: File): Blob {
-  return new Blob(file);
+export async function createZgFile(file: File): Promise<[ZgFile | null, Error | null]> {
+  try {
+    // Create a temporary file with the data
+    const tempFile = new File([await file.arrayBuffer()], file.name);
+    const zgFile = await ZgFile.fromFilePath(file.name);
+    return [zgFile, null];
+  } catch (error) {
+    return [null, error instanceof Error ? error : new Error(String(error))];
+  }
 }
 
 /**
- * Generates a Merkle tree from a blob
- * @param blob The blob to generate a Merkle tree from
+ * Generates a Merkle tree from a ZgFile
+ * @param zgFile The ZgFile to generate a Merkle tree from
  * @returns A promise that resolves to the Merkle tree and any error
  */
-export async function generateMerkleTree(blob: Blob): Promise<[MerkleTree | null, Error | null]> {
+export async function generateMerkleTree(zgFile: ZgFile): Promise<[MerkleTree | null, Error | null]> {
   try {
-    const [tree, treeErr] = await blob.merkleTree();
+    const [tree, treeErr] = await zgFile.merkleTree();
     if (treeErr !== null || !tree) {
       return [null, treeErr || new Error('Unknown error generating Merkle tree')];
     }
@@ -44,15 +51,15 @@ export function getRootHash(tree: MerkleTree): [string | null, Error | null] {
 }
 
 /**
- * Creates a submission for upload from a blob
- * @param blob The blob to create a submission from
+ * Creates a submission for upload from a ZgFile
+ * @param zgFile The ZgFile to create a submission from
  * @returns A promise that resolves to the submission and any error
  */
-export async function createSubmission(blob: Blob): Promise<[any | null, Error | null]> {
+export async function createSubmission(zgFile: ZgFile): Promise<[any | null, Error | null]> {
   try {
     console.log('[createSubmission] Starting submission creation...');
-    console.log('[createSubmission] Blob size:', blob.size);
-    console.log('[createSubmission] Blob type:', typeof blob);
+    console.log('[createSubmission] ZgFile size:', zgFile.size);
+    console.log('[createSubmission] ZgFile type:', typeof zgFile);
     
     // Generate a unique tag using timestamp and random value
     // Ensure it's a valid hex string with even length
@@ -74,7 +81,7 @@ export async function createSubmission(blob: Blob): Promise<[any | null, Error |
       isEvenLength: (uniqueTag.length - 2) % 2 === 0
     });
     
-    const [submission, submissionErr] = await blob.createSubmission(uniqueTag);
+    const [submission, submissionErr] = await zgFile.createSubmission(uniqueTag);
     console.log('[createSubmission] createSubmission result:', { submission, submissionErr });
     
     if (submissionErr !== null || submission === null) {

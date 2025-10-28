@@ -3,7 +3,7 @@ import { useNetwork } from '@/app/providers';
 import { getProvider, getSigner } from '@/lib/0g/fees';
 import { submitTransaction, uploadToStorage } from '@/lib/0g/uploader';
 import { getNetworkConfig, getExplorerUrl } from '@/lib/0g/network';
-import { Blob } from '@0glabs/0g-ts-sdk';
+import { Indexer, ZgFile } from '@0glabs/0g-ts-sdk';
 import { Contract } from 'ethers';
 import { useFileList } from './useFileList';
 import { addFileMeta } from '@/utils/indexeddb';
@@ -28,14 +28,14 @@ export function useUpload() {
 
   // Upload a file to 0G Storage
   const uploadFile = useCallback(async (
-    blob: Blob | null, 
+    zgFile: ZgFile | null, 
     submission: any | null, 
     flowContract: Contract | null, 
     storageFee: bigint,
     originalFile?: File, // 원본 파일 정보 추가
     preCalculatedRootHash?: string // 미리 계산된 Root Hash 추가
   ) => {
-    if (!blob) {
+    if (!zgFile) {
       setError('Missing required upload data');
       return null;
     }
@@ -49,7 +49,7 @@ export function useUpload() {
     
     try {
       console.log('[useUpload] Starting upload process...');
-      console.log('[useUpload] Blob size:', blob.size);
+      console.log('[useUpload] ZgFile size:', zgFile.size);
       console.log('[useUpload] Storage fee:', storageFee.toString());
       console.log('[useUpload] Pre-calculated root hash:', preCalculatedRootHash);
       
@@ -79,7 +79,7 @@ export function useUpload() {
       console.log(`[useUpload] Using l1Rpc: ${network.l1Rpc}`);
       
       const [uploadResult, uploadErr] = await uploadToStorage(
-        blob, 
+        zgFile, 
         network.storageRpc,
         network.l1Rpc,
         signer

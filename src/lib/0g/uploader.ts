@@ -1,4 +1,4 @@
-import { Indexer, Blob } from '@0glabs/0g-ts-sdk';
+import { Indexer, ZgFile } from '@0glabs/0g-ts-sdk';
 import { Contract } from 'ethers';
 
 /**
@@ -72,21 +72,21 @@ export async function submitTransaction(
 
 /**
  * Uploads a file to 0G storage
- * @param blob The blob to upload
+ * @param zgFile The ZgFile to upload
  * @param storageRpc The storage RPC URL
  * @param l1Rpc The L1 RPC URL
  * @param signer The signer
  * @returns A promise that resolves to upload result with root hash and any error
  */
 export async function uploadToStorage(
-  blob: Blob, 
+  zgFile: ZgFile, 
   storageRpc: string, 
   l1Rpc: string, 
   signer: any
 ): Promise<[{ success: boolean; rootHash?: string; alreadyExists: boolean }, Error | null]> {
   try {
     console.log('[uploadToStorage] Starting upload process...');
-    console.log('[uploadToStorage] Blob size:', blob.size);
+    console.log('[uploadToStorage] ZgFile size:', zgFile.size);
     console.log('[uploadToStorage] Storage RPC:', storageRpc);
     console.log('[uploadToStorage] L1 RPC:', l1Rpc);
     console.log('[uploadToStorage] Signer address:', await signer.getAddress());
@@ -130,16 +130,16 @@ export async function uploadToStorage(
     console.log('[uploadToStorage] Calling indexer.upload...');
     
     try {
-      const uploadResult = await indexer.upload(blob, l1Rpc, signer, uploadOptions);
+      const uploadResult = await indexer.upload(zgFile, l1Rpc, signer, uploadOptions);
       console.log('[uploadToStorage] indexer.upload completed successfully');
       console.log('[uploadToStorage] Upload result:', uploadResult);
       console.log('[uploadToStorage] Upload result type:', typeof uploadResult);
       console.log('[uploadToStorage] Upload result keys:', uploadResult ? Object.keys(uploadResult) : 'null');
       
-      // Get root hash from blob's merkle tree
+      // Get root hash from ZgFile's merkle tree
       let rootHash: string;
       try {
-        const [merkleTree, merkleError] = await blob.merkleTree();
+        const [merkleTree, merkleError] = await zgFile.merkleTree();
         if (merkleError || !merkleTree) {
           throw new Error('Failed to get merkle tree');
         }
@@ -148,7 +148,7 @@ export async function uploadToStorage(
           throw new Error('Root hash is null');
         }
         rootHash = hash;
-        console.log('[uploadToStorage] Got root hash from blob:', rootHash);
+        console.log('[uploadToStorage] Got root hash from ZgFile:', rootHash);
       } catch (rootHashError) {
         console.error('[uploadToStorage] Error getting root hash:', rootHashError);
         return [{ success: false, alreadyExists: false }, new Error('Failed to get root hash from blob')];
@@ -168,6 +168,8 @@ export async function uploadToStorage(
             
             // Since we have a root hash and the SDK says data exists, consider this successful
             console.log('[uploadToStorage] File already exists in storage - upload successful');
+            // Close the ZgFile before returning
+            await zgFile.close();
             return [{ 
               success: true, 
               rootHash,
@@ -186,7 +188,7 @@ export async function uploadToStorage(
             
             try {
               console.log('[uploadToStorage] Retrying upload with higher gas price...');
-              const retryResult = await indexer.upload(blob, l1Rpc, signer, retryOptions);
+              const retryResult = await indexer.upload(zgFile, l1Rpc, signer, retryOptions);
               
               if (Array.isArray(retryResult) && retryResult.length === 2) {
                 const [retryResultData, retryError] = retryResult;
@@ -202,7 +204,7 @@ export async function uploadToStorage(
                   
                   try {
                     console.log('[uploadToStorage] Second retry with even higher gas price...');
-                    const secondRetryResult = await indexer.upload(blob, l1Rpc, signer, secondRetryOptions);
+                    const secondRetryResult = await indexer.upload(zgFile, l1Rpc, signer, secondRetryOptions);
                     
                     if (Array.isArray(secondRetryResult) && secondRetryResult.length === 2) {
                       const [secondRetryData, secondRetryError] = secondRetryResult;
@@ -210,6 +212,8 @@ export async function uploadToStorage(
                         console.log('[uploadToStorage] Second retry also failed:', secondRetryError);
                         // 모든 재시도 실패했지만 root hash는 있으므로 성공으로 처리
                         console.log('[uploadToStorage] Upload successful despite transaction failure (root hash available)');
+                        // Close the ZgFile before returning
+                        await zgFile.close();
                         return [{ 
                           success: true, 
                           rootHash,
@@ -217,6 +221,8 @@ export async function uploadToStorage(
                         }, null];
                       } else {
                         console.log('[uploadToStorage] Second retry successful:', secondRetryData);
+                        // Close the ZgFile before returning
+                        await zgFile.close();
                         return [{ 
                           success: true, 
                           rootHash: secondRetryData || rootHash,
@@ -243,6 +249,8 @@ export async function uploadToStorage(
                   }
                 } else {
                   console.log('[uploadToStorage] Retry successful:', retryResultData);
+                  // Close the ZgFile before returning
+                  await zgFile.close();
                   return [{ 
                     success: true, 
                     rootHash: retryResultData || rootHash,
@@ -269,7 +277,7 @@ export async function uploadToStorage(
               
               try {
                 console.log('[uploadToStorage] Second retry with even higher gas price...');
-                const secondRetryResult = await indexer.upload(blob, l1Rpc, signer, secondRetryOptions);
+                const secondRetryResult = await indexer.upload(zgFile, l1Rpc, signer, secondRetryOptions);
                 
                 if (Array.isArray(secondRetryResult) && secondRetryResult.length === 2) {
                   const [secondRetryData, secondRetryError] = secondRetryResult;
@@ -341,16 +349,23 @@ export async function uploadToStorage(
           const resultRootHash = (uploadResult as any).rootHash;
           console.log('[uploadToStorage] Upload successful with root hash:', resultRootHash);
           
+          // Close the ZgFile before returning
+          await zgFile.close();
+          
           // If we have a root hash, consider the upload successful
           return [{ success: true, rootHash: resultRootHash, alreadyExists: false }, null];
         } else {
           console.warn('[uploadToStorage] Upload result does not contain root hash, upload may have failed');
+          // Close the ZgFile before returning
+          await zgFile.close();
           return [{ success: false, alreadyExists: false }, new Error('Upload completed but no root hash was returned')];
         }
       }
       
       // If we get here, the result format is unexpected
       console.warn('[uploadToStorage] Unexpected upload result format:', uploadResult);
+      // Close the ZgFile before returning
+      await zgFile.close();
       return [{ success: false, alreadyExists: false }, new Error('Unexpected upload result format')];
       
     } catch (uploadError) {
@@ -360,6 +375,8 @@ export async function uploadToStorage(
         stack: uploadError instanceof Error ? uploadError.stack : undefined,
         name: uploadError instanceof Error ? uploadError.name : 'Unknown'
       });
+      // Close the ZgFile before rethrowing
+      await zgFile.close();
       throw uploadError;
     }
   } catch (error) {
@@ -370,6 +387,12 @@ export async function uploadToStorage(
       name: error instanceof Error ? error.name : 'Unknown',
       code: (error as any)?.code
     });
+    // Close the ZgFile before returning
+    try {
+      await zgFile.close();
+    } catch (closeError) {
+      console.error('[uploadToStorage] Error closing ZgFile:', closeError);
+    }
     return [{ success: false, alreadyExists: false }, error instanceof Error ? error : new Error(String(error))];
   }
 } 

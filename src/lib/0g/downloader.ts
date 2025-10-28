@@ -1,4 +1,4 @@
-import { Indexer } from '@0glabs/0g-ts-sdk';
+import { Indexer, ZgFile } from '@0glabs/0g-ts-sdk';
 
 /**
  * Downloads a file from 0G storage by root hash using direct API call
@@ -173,11 +173,6 @@ export async function downloadByRootHashAPI(
  * @param storageRpc The storage RPC URL to connect to
  * @param filePath Optional file path. If not provided, rootHash will be used as the path
  * @returns A promise that resolves to the file data (ArrayBuffer) and any error
- * 
- * Note: The indexer.download function takes 3 parameters:
- * 1. rootHash: The root hash of the file to download
- * 2. path: The file path (can be the same as rootHash)
- * 3. skipVerify: Whether to skip verification (default: false)
  */
 export async function downloadByRootHash(
   rootHash: string, 
@@ -194,39 +189,33 @@ export async function downloadByRootHash(
     
     const indexer = new Indexer(storageRpc);
     console.log(`Indexer:`, indexer);
-    // Log the parameters being passed to indexer.download
-    console.log(`Calling indexer.download with rootHash: ${rootHash}, filePath: ${filePath || rootHash}`);
     
     // Use the provided file path, or fall back to using the root hash as the path
     const path = filePath || rootHash;
-    let fileData;
     
     try {
-      // The second parameter is the file path, not a user address
-      // The third parameter is skipVerify (we'll set it to false for now)
       console.log(`Downloading file from ${storageRpc} with path: ${path}`);
       console.log(`Downloading file from ${storageRpc} with rootHash: ${rootHash}`);
-      fileData = await indexer.download(rootHash, path, false);
+      
+      // Download the file
+      const downloadResult = await indexer.download(rootHash, path, false);
+      if (downloadResult) {
+        throw new Error('Failed to download file: ' + downloadResult.message);
+      }
+      
+      // Read file content as ArrayBuffer
+      const response = await fetch(`${storageRpc}/file?root=${rootHash}`);
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+      const fileData = await response.arrayBuffer();
+      console.log(`Returning fileData of length ${fileData.byteLength}`);
+      return [fileData, null];
+      
     } catch (downloadError) {
-      console.log('Error from indexer.download:', downloadError);
+      console.log('Error downloading file:', downloadError);
       return [null, new Error(`Download failed: ${downloadError instanceof Error ? downloadError.message : String(downloadError)}`)];
     }
-    
-    // Log the result of indexer.download
-    console.log(`indexer.download result type:`, fileData ? typeof fileData : 'null');
-    
-    if (!fileData) {
-      console.log('fileData is null or undefined');
-      return [null, new Error('File data is null or undefined')];
-    }
-    
-    if (!(fileData instanceof ArrayBuffer)) {
-      console.log('fileData is not an ArrayBuffer:', typeof fileData);
-      return [null, new Error(`Invalid file data type: ${typeof fileData}`)];
-    }
-    
-    console.log(`Returning fileData of length ${fileData.byteLength}`);
-    return [fileData, null];
   } catch (error) {
     console.log('Error in downloadByRootHash:', error);
     return [null, error instanceof Error ? error : new Error(String(error))];

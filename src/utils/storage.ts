@@ -67,9 +67,9 @@ export async function verifyFileIntegrity(
       throw new Error(treeErr ? (treeErr as Error).message : 'Failed to generate merkle tree');
     }
 
-    const [actualRoot, rootErr] = [tree.rootHash(), null];
-    if (rootErr || !actualRoot) {
-      throw new Error(rootErr?.message || 'Failed to get root hash');
+    const actualRoot = tree.rootHash();
+    if (!actualRoot) {
+      throw new Error('Failed to get root hash');
     }
 
     return [actualRoot === expectedRoot, null];

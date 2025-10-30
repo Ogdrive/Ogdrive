@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNetwork } from '@/app/providers';
 import { getProvider, getSigner } from '@/lib/0g/fees';
 import { submitTransaction, uploadToStorage } from '@/lib/0g/uploader';
+import { verifyFileOnChain, submitVerificationTransaction } from '@/lib/0g/verification';
 import { getNetworkConfig, getExplorerUrl } from '@/lib/0g/network';
 import { Indexer, ZgFile } from '@0glabs/0g-ts-sdk';
 import { Contract } from 'ethers';
@@ -32,8 +33,9 @@ export function useUpload() {
     submission: any | null, 
     flowContract: Contract | null, 
     storageFee: bigint,
-    originalFile?: File, // 원본 파일 정보 추가
-    preCalculatedRootHash?: string // 미리 계산된 Root Hash 추가
+    originalFile?: File,
+    preCalculatedRootHash?: string,
+    verifyOnChain: boolean = true
   ) => {
     if (!zgFile) {
       setError('Missing required upload data');
@@ -107,17 +109,31 @@ export function useUpload() {
       
       // Store root hash and already exists flag
       if (uploadResult.rootHash) {
-        // preCalculatedRootHash를 우선 사용, 없으면 uploadResult.rootHash 사용
         const finalRootHash = preCalculatedRootHash || uploadResult.rootHash;
         setRootHash(finalRootHash);
         setAlreadyExists(uploadResult.alreadyExists);
         
-        // 파일 리스트 추가는 UploadModal에서 처리하므로 여기서는 제거
-        // 중복 등록 방지를 위해 useUpload에서는 파일 추가하지 않음
-        
-        if (uploadResult.alreadyExists) {
-          console.log('[useUpload] File already exists in storage, upload successful with root hash:', finalRootHash);
-          setUploadStatus('File already exists in storage - upload successful!');
+        // Verify on-chain if requested
+        if (verifyOnChain && !uploadResult.alreadyExists) {
+          setUploadStatus('Verifying on chain...');
+          const [txHash, verifyErr] = await submitVerificationTransaction(finalRootHash, networkType);
+          
+          if (verifyErr) {
+            console.warn('[useUpload] On-chain verification warning:', verifyErr);
+            setUploadStatus('Upload complete! (On-chain verification pending)');
+          } else {
+            console.log('[useUpload] On-chain verification successful:', txHash);
+            setUploadStatus('Upload complete! (Verified on chain)');
+          }
+        } else if (uploadResult.alreadyExists) {
+          console.log('[useUpload] File already exists in storage with root hash:', finalRootHash);
+          setUploadStatus('File already exists in storage');
+          
+          // Verify existing file on chain
+          const verificationResult = await verifyFileOnChain(finalRootHash, networkType);
+          if (verificationResult.verified) {
+            setUploadStatus('File verified on chain');
+          }
         } else {
           console.log('[useUpload] Upload completed successfully with root hash:', finalRootHash);
           setUploadStatus('Upload complete!');

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNetwork } from '@/app/providers';
 import { downloadByRootHash, downloadByRootHashAPI, downloadBlobAsFile } from '@/lib/0g/downloader';
+import { verifyFileOnChain } from '@/lib/0g/verification';
 import { getNetworkConfig } from '@/lib/0g/network';
 import { useWallet } from '@/hooks/useWallet';
 
@@ -16,7 +17,7 @@ export function useDownload() {
   const [downloadStatus, setDownloadStatus] = useState('');
 
   // Download a file by root hash with retry logic
-  const downloadFile = useCallback(async (rootHash: string, fileName?: string) => {
+  const downloadFile = useCallback(async (rootHash: string, fileName?: string, verifyOnChain: boolean = true) => {
     if (!rootHash) {
       setError('Root hash is required');
       return false;
@@ -25,6 +26,24 @@ export function useDownload() {
     setLoading(true);
     setError('');
     setDownloadStatus('Connecting to storage...');
+    
+    // Verify on chain first if requested
+    if (verifyOnChain) {
+      setDownloadStatus('Verifying file on chain...');
+      const verificationResult = await verifyFileOnChain(rootHash, networkType);
+      
+      if (!verificationResult.verified) {
+        setError('File verification failed: File not found on chain or verification error');
+        setDownloadStatus('');
+        setLoading(false);
+        return false;
+      }
+      
+      console.log('[useDownload] File verified on chain:', {
+        submitter: verificationResult.submitter,
+        timestamp: new Date(verificationResult.timestamp * 1000).toISOString()
+      });
+    }
     
     console.log('[useDownload] Starting download with root hash:', rootHash);
     console.log('[useDownload] File name:', fileName);
